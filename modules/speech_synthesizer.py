@@ -2,17 +2,18 @@ import requests
 import json
 from playsound import playsound
 import os
+import config
 
-def speak_voicevox(text, speaker_id):
+def speak(text):
     """
     VOICEVOX Engineを使用してテキストを音声に変換し、再生します。
 
     Args:
         text (str): 読み上げさせたいテキスト。
-        speaker_id (int): 使用する話者のID。VOICEVOXエディタで確認できます。
     """
     host = '127.0.0.1'
     port = '50021'
+    speaker_id = config.speaker_id
 
     # 1. 音声合成用のクエリを作成
     params = {'text': text, 'speaker': speaker_id}
@@ -53,7 +54,7 @@ if __name__ == '__main__':
     # 例: 好きな文章を喋らせる
     my_text = input("\n喋らせたい文章を入力してください: ")
     try:
-        speak_voicevox(my_text, 3)
+        speak(my_text)
     except ValueError:
         print("無効な話者IDが入力されました。数値で入力してください。")
 
