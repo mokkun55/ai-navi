@@ -4,7 +4,7 @@ import config
 from modules import transcriber, llm_handler, speech_synthesizer
 
 def create_ui():
-    """GradioのUIを作成し、イベントハンドラを定義する。"""
+    """のUIを作成し、イベントハンドラを定義する。"""
 
     def convert_history_for_llm(chat_history):
         """GradioのMessage形式の履歴を、LLM Handlerが期待する形式に変換する。"""
@@ -19,44 +19,42 @@ def create_ui():
                     history_for_llm[-1][1] = message["content"]
         return history_for_llm
 
-    def voice_chat(audio_path, chat_history):
+    def chat_handler(user_input, chat_history):
         """
-        音声入力からAI応答までの処理を行う。
-        UIの状態を `yield` を使って段階的に更新する。
+        ユーザーの入力（テキストまたは音声）を処理し、AIの応答を生成する。
         """
-        # 処理中は入力ボタンを無効化
-        yield {
-            status_text: "【ステータス】ユーザーの音声を文字に変換しています...",
-            chatbot: chat_history,
-            response_audio: None,
-            audio_input: gr.Audio(interactive=False),
-        }
+        if isinstance(user_input, str):
+            # テキスト入力の場合
+            user_text = user_input
+            print(f"ユーザー入力 (テキスト): '{user_text}'")
+            # テキスト入力時は入力コンポーネントを即座に有効化
+            yield {
+                text_input: gr.Textbox(interactive=True, value=""), 
+                audio_input: gr.Audio(interactive=True)
+            }
+        else: # 音声入力の場合 (user_input is a filepath)
+            # 処理中は入力ボタンを無効化
+            yield {
+                status_text: "【ステータス】ユーザーの音声を文字に変換しています...",
+                chatbot: chat_history,
+                response_audio: None,
+                audio_input: gr.Audio(interactive=False),
+                text_input: gr.Textbox(interactive=False),
+            }
+            # 1. 文字起こし
+            start_time = time.time()
+            user_text = transcriber.transcribe_audio(user_input)
+            end_time = time.time()
+            print(f"ユーザー入力 (音声): '{user_text}' (文字起こし時間: {end_time - start_time:.2f}秒)")
 
-        # 1. 文字起こし
-        start_time = time.time()
-        if config.is_bypass_whisper:
-            user_text = config.bypass_text
-            print(f"Whisperをスキップしました。入力テキスト: '{user_text}'")
-        else:
-            if audio_path is None:
+            if not user_text:
                 yield {
-                    status_text: "【ステータス】エラー：音声が録音されていません。",
+                    status_text: "【ステータス】エラー：音声の文字起こしに失敗しました。",
                     chatbot: chat_history,
-                    audio_input: gr.Audio(interactive=True) # ボタンを有効化
+                    audio_input: gr.Audio(interactive=True), # ボタンを有効化
+                    text_input: gr.Textbox(interactive=True), # ボタンを有効化
                 }
                 return
-            user_text = transcriber.transcribe_audio(audio_path)
-
-        end_time = time.time()
-        print(f"ユーザー入力: '{user_text}' (文字起こし時間: {end_time - start_time:.2f}秒)")
-
-        if not user_text:
-            yield {
-                status_text: "【ステータス】エラー：音声の文字起こしに失敗しました。無音だったか、ノイズが大きすぎる可能性があります。",
-                chatbot: chat_history,
-                audio_input: gr.Audio(interactive=True) # ボタンを有効化
-            }
-            return
 
         chat_history.append({"role": "user", "content": user_text})
 
@@ -67,24 +65,24 @@ def create_ui():
             yield {
                 status_text: f"【ステータス】{farewell}",
                 chatbot: chat_history,
-                audio_input: gr.Audio(interactive=True) # ボタンを有効化
+                audio_input: gr.Audio(interactive=True),
+                text_input: gr.Textbox(interactive=True, value=""),
             }
             return
 
-        # 3. 応答生成
+        # 応答生成
         yield {
             status_text: "【ステータス】AIが応答を考えています...",
             chatbot: chat_history,
         }
         start_time = time.time()
-        # LLMに渡すために履歴の形式を変換
-        history_for_llm = convert_history_for_llm(chat_history[:-1]) # 最新のユーザー発言は除く
+        history_for_llm = convert_history_for_llm(chat_history[:-1])
         ai_response = llm_handler.generate_response(user_text, history_for_llm)
         end_time = time.time()
         print(f"AI応答: '{ai_response}' (応答生成時間: {end_time - start_time:.2f}秒)")
         chat_history.append({"role": "assistant", "content": ai_response})
 
-        # 4. 音声合成
+        # 音声合成
         yield {
             status_text: "【ステータス】AIの応答を音声に変換しています...",
             chatbot: chat_history,
@@ -98,31 +96,34 @@ def create_ui():
             yield {
                 status_text: "【ステータス】エラー：音声合成に失敗しました。",
                 chatbot: chat_history,
-                audio_input: gr.Audio(interactive=True) # ボタンを有効化
+                audio_input: gr.Audio(interactive=True),
+                text_input: gr.Textbox(interactive=True, value=""),
             }
             return
 
-        # 5. UIを最終状態に更新し、音声を再生
+        # UIを最終状態に更新
         yield {
-            status_text: "【ステータス】準備完了。マイクボタンを押して話しかけてください。",
+            status_text: "【ステータス】準備完了。マイクボタンかテキスト入力で話しかけてください。",
             chatbot: chat_history,
             response_audio: gr.Audio(value=output_audio_path, autoplay=True),
-            audio_input: gr.Audio(value=None, interactive=True), # ボタンを有効化し、入力をクリア
+            audio_input: gr.Audio(value=None, interactive=True),
+            text_input: gr.Textbox(value="", interactive=True),
         }
 
     def clear_session():
         """会話履歴とステータスを初期化する。"""
-        initial_status = "【ステータス】準備完了。マイクボタンを押して話しかけてください。"
+        initial_status = "【ステータス】準備完了。マイクボタンかテキスト入力で話しかけてください。"
         print("--- セッションをリセットしました ---")
-        return [], initial_status, None
+        return [], initial_status, None, ""
+
 
     with gr.Blocks(title="AI音声対話アプリ", theme=gr.themes.Soft()) as demo:
         gr.Markdown("# AI音声対話アプリ")
-        gr.Markdown("下のマイクボタンを押し、話し終わったらもう一度押して録音を終了してください。AIが応答します。")
+        gr.Markdown("マイクボタンで音声入力、または下のテキストボックスに入力してEnterキーを押してください。")
 
         chatbot = gr.Chatbot(label="会話ログ", height=400, type="messages")
         status_text = gr.Textbox(
-            "【ステータス】準備完了。マイクボタンを押して話しかけてください。",
+            "【ステータス】準備完了。マイクボタンかテキスト入力で話しかけてください。",
             label="現在の状態",
             interactive=False
         )
@@ -132,7 +133,13 @@ def create_ui():
                 sources=["microphone"], 
                 type="filepath", 
                 label="音声入力",
-                scale=3, # ボタンを大きく表示
+            )
+        
+        with gr.Row():
+            text_input = gr.Textbox(
+                label="テキスト入力",
+                placeholder="ここにメッセージを入力してEnter",
+                scale=4,
             )
             clear_button = gr.Button("セッションを終了する", scale=1)
 
@@ -141,15 +148,21 @@ def create_ui():
 
         # イベントリスナー
         audio_input.stop_recording(
-            voice_chat,
+            chat_handler,
             inputs=[audio_input, chatbot],
-            outputs=[status_text, chatbot, response_audio, audio_input],
+            outputs=[status_text, chatbot, response_audio, audio_input, text_input],
+        )
+
+        text_input.submit(
+            chat_handler,
+            inputs=[text_input, chatbot],
+            outputs=[status_text, chatbot, response_audio, audio_input, text_input],
         )
         
         clear_button.click(
             clear_session,
             inputs=[],
-            outputs=[chatbot, status_text, response_audio],
+            outputs=[chatbot, status_text, response_audio, text_input],
         )
 
     return demo
