@@ -24,19 +24,26 @@ def create_ui():
         音声入力からAI応答までの処理を行う。
         UIの状態を `yield` を使って段階的に更新する。
         """
-        # 1. 文字起こし
+        # 処理中は入力ボタンを無効化
         yield {
             status_text: "【ステータス】ユーザーの音声を文字に変換しています...",
             chatbot: chat_history,
-            response_audio: None, # 前回の音声をクリア
+            response_audio: None,
+            audio_input: gr.Audio(interactive=False),
         }
+
+        # 1. 文字起こし
         start_time = time.time()
         if config.is_bypass_whisper:
             user_text = config.bypass_text
             print(f"Whisperをスキップしました。入力テキスト: '{user_text}'")
         else:
             if audio_path is None:
-                yield {status_text: "【ステータス】エラー：音声が録音されていません。", chatbot: chat_history}
+                yield {
+                    status_text: "【ステータス】エラー：音声が録音されていません。",
+                    chatbot: chat_history,
+                    audio_input: gr.Audio(interactive=True) # ボタンを有効化
+                }
                 return
             user_text = transcriber.transcribe_audio(audio_path)
 
@@ -44,8 +51,12 @@ def create_ui():
         print(f"ユーザー入力: '{user_text}' (文字起こし時間: {end_time - start_time:.2f}秒)")
 
         if not user_text:
-             yield {status_text: "【ステータス】エラー：音声の文字起こしに失敗しました。無音だったか、ノイズが大きすぎる可能性があります。", chatbot: chat_history}
-             return
+            yield {
+                status_text: "【ステータス】エラー：音声の文字起こしに失敗しました。無音だったか、ノイズが大きすぎる可能性があります。",
+                chatbot: chat_history,
+                audio_input: gr.Audio(interactive=True) # ボタンを有効化
+            }
+            return
 
         chat_history.append({"role": "user", "content": user_text})
 
@@ -56,6 +67,7 @@ def create_ui():
             yield {
                 status_text: f"【ステータス】{farewell}",
                 chatbot: chat_history,
+                audio_input: gr.Audio(interactive=True) # ボタンを有効化
             }
             return
 
@@ -86,6 +98,7 @@ def create_ui():
             yield {
                 status_text: "【ステータス】エラー：音声合成に失敗しました。",
                 chatbot: chat_history,
+                audio_input: gr.Audio(interactive=True) # ボタンを有効化
             }
             return
 
@@ -94,12 +107,18 @@ def create_ui():
             status_text: "【ステータス】準備完了。マイクボタンを押して話しかけてください。",
             chatbot: chat_history,
             response_audio: gr.Audio(value=output_audio_path, autoplay=True),
+            audio_input: gr.Audio(value=None, interactive=True), # ボタンを有効化し、入力をクリア
         }
 
+    def clear_session():
+        """会話履歴とステータスを初期化する。"""
+        initial_status = "【ステータス】準備完了。マイクボタンを押して話しかけてください。"
+        print("--- セッションをリセットしました ---")
+        return [], initial_status, None
 
     with gr.Blocks(title="AI音声対話アプリ", theme=gr.themes.Soft()) as demo:
         gr.Markdown("# AI音声対話アプリ")
-        gr.Markdown("マイクボタンを押し、話し終わったらもう一度押して録音を終了してください。AIが応答します。")
+        gr.Markdown("下のマイクボタンを押し、話し終わったらもう一度押して録音を終了してください。AIが応答します。")
 
         chatbot = gr.Chatbot(label="会話ログ", height=400, type="messages")
         status_text = gr.Textbox(
@@ -107,7 +126,15 @@ def create_ui():
             label="現在の状態",
             interactive=False
         )
-        audio_input = gr.Audio(sources=["microphone"], type="filepath", label="音声入力")
+        
+        with gr.Row():
+            audio_input = gr.Audio(
+                sources=["microphone"], 
+                type="filepath", 
+                label="音声入力",
+                scale=3, # ボタンを大きく表示
+            )
+            clear_button = gr.Button("セッションを終了する", scale=1)
 
         # 自動再生用の非表示コンポーネント
         response_audio = gr.Audio(label="AIの応答", autoplay=True, visible=False)
@@ -116,7 +143,13 @@ def create_ui():
         audio_input.stop_recording(
             voice_chat,
             inputs=[audio_input, chatbot],
-            outputs=[status_text, chatbot, response_audio],
+            outputs=[status_text, chatbot, response_audio, audio_input],
+        )
+        
+        clear_button.click(
+            clear_session,
+            inputs=[],
+            outputs=[chatbot, status_text, response_audio],
         )
 
     return demo
