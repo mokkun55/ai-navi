@@ -1,6 +1,5 @@
-openai-whisper
-PyAudio
-pydub
-lmstudio
-requests
-playsound
+openai==1.23.6
+pyaudio==0.2.14
+python-dotenv==1.0.1
+openai-whisper==20231117
+gradio
