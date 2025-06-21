@@ -1,5 +1,6 @@
 import gradio as gr
 import time
+import os
 import config
 from modules import transcriber, llm_handler, speech_synthesizer
 
@@ -23,17 +24,17 @@ def create_ui():
         """
         ユーザーの入力（テキストまたは音声）を処理し、AIの応答を生成する。
         """
-        if isinstance(user_input, str):
-            # テキスト入力の場合
-            user_text = user_input
-            print(f"ユーザー入力 (テキスト): '{user_text}'")
-            # テキスト入力時は入力コンポーネントを即座に有効化
+        if not user_input:
             yield {
-                text_input: gr.Textbox(interactive=True, value=""), 
+                text_input: gr.Textbox(interactive=True),
                 audio_input: gr.Audio(interactive=True)
             }
-        else: # 音声入力の場合 (user_input is a filepath)
-            # 処理中は入力ボタンを無効化
+            return
+
+        is_audio = isinstance(user_input, str) and os.path.isfile(user_input)
+
+        if is_audio:
+            # 音声入力の場合
             yield {
                 status_text: "【ステータス】ユーザーの音声を文字に変換しています...",
                 chatbot: chat_history,
@@ -55,6 +56,15 @@ def create_ui():
                     text_input: gr.Textbox(interactive=True), # ボタンを有効化
                 }
                 return
+        else:
+            # テキスト入力の場合
+            user_text = user_input
+            print(f"ユーザー入力 (テキスト): '{user_text}'")
+            # 処理中は入力コンポーネントを無効化
+            yield {
+                text_input: gr.Textbox(value="", interactive=False),
+                audio_input: gr.Audio(interactive=False),
+            }
 
         chat_history.append({"role": "user", "content": user_text})
 
@@ -147,7 +157,7 @@ def create_ui():
         response_audio = gr.Audio(label="AIの応答", autoplay=True, visible=False)
 
         # イベントリスナー
-        audio_input.stop_recording(
+        audio_input.change(
             chat_handler,
             inputs=[audio_input, chatbot],
             outputs=[status_text, chatbot, response_audio, audio_input, text_input],
