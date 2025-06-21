@@ -13,3 +13,6 @@ speaker_id = 2
 # プロンプト設定
 with open("prompt.md", "r", encoding="utf-8") as f:
     system_prompt = f.read()
+
+# 対話履歴を記憶する最大数 (ユーザーの発言とAIの応答を1セットとする)
+MAX_HISTORY = 5
