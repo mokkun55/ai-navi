@@ -37,7 +37,7 @@ def generate_response(user_text, history):
         if user_msg:
             chat_session.add_user_message(user_msg)
         if ai_msg:
-            chat_session.add_assistant_message(ai_msg)
+            chat_session.add_assistant_response(ai_msg)
 
     try:
         # ユーザーの最新のメッセージをチャットに追加
