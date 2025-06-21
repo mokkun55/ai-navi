@@ -1,0 +1,8 @@
+openai
+openai-whisper
+SpeechRecognition
+PyAudio
+soundfile
+numpy
+keyboard
+pydub
